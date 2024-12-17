@@ -8,13 +8,12 @@ import (
 )
 
 const MAX_KEYS = 4
-const MIN_KEYS = 1
+const MIN_KEYS = 2
 
 type BNode struct {
 	keys     []int
 	children []*BNode
 	isLeaf   bool
-	runner   *Runner
 }
 
 func (node BNode) string(indent string) string {
@@ -38,7 +37,8 @@ func (node BNode) String() string {
 }
 
 type BTree struct {
-	root *BNode
+	root   *BNode
+	runner *Runner
 }
 
 func newBTree(runner *Runner) *BTree {
@@ -47,8 +47,8 @@ func newBTree(runner *Runner) *BTree {
 			keys:     []int{},
 			children: nil,
 			isLeaf:   true,
-			runner:   runner,
 		},
+		runner: runner,
 	}
 }
 
@@ -61,7 +61,7 @@ func (tree *BTree) insert(key int) {
 			tree.splitNode(parent, -1)
 		}
 	} else {
-		if tree.root.runner.debug {
+		if tree.runner.debug {
 			fmt.Printf("key %d child index %d children:%v\n", key, childIndex, parent.children)
 		}
 		curr := parent.children[childIndex]
@@ -73,17 +73,18 @@ func (tree *BTree) insert(key int) {
 	}
 }
 
-func (tree *BTree) search(key int) (*BNode, int, bool) {
-	if tree.root.runner.debug {
+func (tree *BTree) search(key int) (*BNode, int, int) {
+	if tree.runner.debug {
 		fmt.Println("start find")
 	}
 	prev := tree.root
 	curr := tree.root
 
 	childIndex := 0
+	keyIndex := -1
 	for {
 		i := 0
-		if tree.root.runner.debug {
+		if tree.runner.debug {
 			fmt.Printf("curr at start %v\n", curr)
 		}
 		for i < len(curr.keys) && key > curr.keys[i] {
@@ -91,6 +92,7 @@ func (tree *BTree) search(key int) (*BNode, int, bool) {
 		}
 
 		if i < len(curr.keys) && key == curr.keys[i] {
+			keyIndex = i
 			break
 		}
 
@@ -98,7 +100,7 @@ func (tree *BTree) search(key int) (*BNode, int, bool) {
 			prev = curr
 			childIndex = i
 			curr = curr.children[i]
-			if tree.root.runner.debug {
+			if tree.runner.debug {
 				fmt.Printf("i %d curr at end %v\n", i, curr)
 			}
 		} else {
@@ -106,11 +108,72 @@ func (tree *BTree) search(key int) (*BNode, int, bool) {
 		}
 	}
 
-	return prev, childIndex, false
+	return prev, childIndex, keyIndex
 }
 
 func (tree *BTree) delete(key int) {
 	// TODO: Implement deletion logic
+	parent, childIndex, keyIndex := tree.search(key)
+	if keyIndex == -1 {
+		return
+	}
+
+	// Root
+	if childIndex >= len(parent.children) {
+
+		return
+	}
+
+	node := parent.children[childIndex]
+	if node.isLeaf {
+		if len(node.keys) > MIN_KEYS {
+			j := keyIndex + 1
+			if j > len(node.keys) {
+				j = len(node.keys)
+			}
+			node.keys = slices.Delete(node.keys, keyIndex, j)
+			slices.Sort(node.keys)
+			return
+		}
+
+		leftSibIndex := childIndex - 1
+		rigthSibIndex := childIndex + 1
+
+		if leftSibIndex > -1 && len(parent.children[leftSibIndex].keys) > MIN_KEYS {
+			leftSib := parent.children[leftSibIndex]
+			if len(leftSib.keys) == MIN_KEYS {
+				tree.mergeNodes(parent, childIndex)
+				return
+			}
+
+			parentKeyIndex := leftSibIndex
+			temp := parent.keys[parentKeyIndex]
+			parent.keys[parentKeyIndex] = leftSib.keys[len(leftSib.keys)-1]
+			leftSib.keys = leftSib.keys[:len(leftSib.keys)-1]
+			node.keys[keyIndex] = temp
+			slices.Sort(node.keys)
+			return
+		}
+
+		if rigthSibIndex < len(parent.children) && len(parent.children[rigthSibIndex].keys) > MIN_KEYS {
+			rigthSib := parent.children[rigthSibIndex]
+			if len(rigthSib.keys) == MIN_KEYS {
+				tree.mergeNodes(parent, childIndex)
+				return
+			}
+
+			parentKeyIndex := childIndex
+			temp := parent.keys[parentKeyIndex]
+			parent.keys[parentKeyIndex] = rigthSib.keys[0]
+			rigthSib.keys = rigthSib.keys[1:]
+			node.keys[keyIndex] = temp
+			slices.Sort(node.keys)
+			return
+		}
+
+		panic("node must have either left or rigth sibiling")
+	}
+
 }
 
 func (tree *BTree) splitNode(parent *BNode, childIndex int) {
@@ -141,7 +204,7 @@ func (tree *BTree) splitNode(parent *BNode, childIndex int) {
 		right.children = append([]*BNode(nil), node.children[midIndex+1:]...)
 	}
 
-	if tree.root.runner.debug {
+	if tree.runner.debug {
 		fmt.Printf("left %v rigth %v\n", left, right)
 	}
 
@@ -210,12 +273,20 @@ type Runner struct {
 }
 
 func (r Runner) main() {
+	r.delete()
+}
+
+func (r Runner) delete() {
+	fmt.Println("run delete")
 	last := make([]int, 50)
 	for i := range 50 {
 		last[i] = i + 1
 	}
+
 	cases := [][]int{
-		last,
+		[]int{1, 2, 3, 4, 5, 6},
+		[]int{1, 2, 3, 4, 5, 6, 7, 8, 9},
+		[]int{9, 8, 7, 6, 5, 4},
 	}
 
 	for i, case_ := range cases {
@@ -226,7 +297,48 @@ func (r Runner) main() {
 			bTree.insert(item)
 		}
 
+		if i == 2 {
+			bTree.delete(8)
+		} else {
+			bTree.delete(5)
+		}
 		bTree.printTree()
+		fmt.Println()
+		fmt.Println()
+	}
+}
+
+func (r Runner) insert() {
+	fmt.Println("run insert")
+	last := make([]int, 50)
+	for i := range 50 {
+		last[i] = i + 1
+	}
+	cases := [][]int{
+		[]int{10},
+		[]int{10, 20, 30},
+		[]int{10, 20, 30, 40},
+		[]int{10, 20, 30, 40, 50, 60},
+		[]int{10, 20, 30, 40, 50, 60, 70, 80},
+		[]int{50, 40, 60, 30, 70, 20, 80, 10, 90},
+		[]int{50, 30, 70, 20, 40, 60, 80, 10, 90, 100},
+		[]int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+		[]int{100, 90, 80, 70, 60, 50, 40, 30, 20, 10},
+		[]int{50, 20, 80, 40, 70, 30, 60, 10, 90, 100},
+		[]int{10, 20, 20, 30},
+		last,
+	}
+
+	for i, case_ := range cases {
+		fmt.Printf("start case %d with data %v\n", i, case_)
+		bTree := newBTree(&r)
+		fmt.Printf("root %v\n", bTree.root)
+
+		for _, item := range case_ {
+			bTree.insert(item)
+		}
+
+		fmt.Printf("root %v\n", bTree.root)
 		fmt.Println()
 		fmt.Println()
 	}
