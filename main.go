@@ -174,6 +174,7 @@ func (tree *BTree) delete(key int) {
 	}
 
 	node := parent.children[childIndex]
+	// Internal
 	if !node.isLeaf {
 		smallChildIndex := childIndex
 		largeChildIndex := childIndex + 1
@@ -197,28 +198,29 @@ func (tree *BTree) delete(key int) {
 		node.keys[keyIndex] = electedKey
 		if len(electedChild.keys) < MIN_KEYS {
 			if electedChildDir == "l" {
+				node.keys = slices.Delete(node.keys, keyIndex, keyIndex+1)
 				tree.borrowFromSibling(node, smallChildIndex, 0)
 			} else {
+				node.keys = slices.Delete(node.keys, keyIndex, keyIndex+1)
 				tree.borrowFromSibling(node, largeChildIndex, len(electedChild.keys)-1)
 			}
 		}
 		return
 	}
 
-	if node.isLeaf {
-		if len(node.keys) > MIN_KEYS {
-			j := keyIndex + 1
-			if j > len(node.keys) {
-				j = len(node.keys)
-			}
-			node.keys = slices.Delete(node.keys, keyIndex, j)
-			slices.Sort(node.keys)
-			return
+	// Leaf
+	if len(node.keys) > MIN_KEYS {
+		j := keyIndex + 1
+		if j > len(node.keys) {
+			j = len(node.keys)
 		}
-
-		tree.borrowFromSibling(parent, childIndex, keyIndex)
+		node.keys = slices.Delete(node.keys, keyIndex, j)
+		slices.Sort(node.keys)
+		return
 	}
 
+	node.keys = slices.Delete(node.keys, keyIndex, keyIndex+1)
+	tree.borrowFromSibling(parent, childIndex, keyIndex)
 }
 
 func (tree *BTree) borrowFromSibling(parent *BNode, childIndex int, keyIndex int) {
@@ -233,7 +235,7 @@ func (tree *BTree) borrowFromSibling(parent *BNode, childIndex int, keyIndex int
 		temp := parent.keys[parentKeyIndex]
 		parent.keys[parentKeyIndex] = leftSib.keys[len(leftSib.keys)-1]
 		leftSib.keys = leftSib.keys[:len(leftSib.keys)-1]
-		node.keys[keyIndex] = temp
+		node.keys = append(node.keys, temp)
 		slices.Sort(node.keys)
 		return
 	}
@@ -245,27 +247,28 @@ func (tree *BTree) borrowFromSibling(parent *BNode, childIndex int, keyIndex int
 		temp := parent.keys[parentKeyIndex]
 		parent.keys[parentKeyIndex] = rigthSib.keys[0]
 		rigthSib.keys = rigthSib.keys[1:]
-		node.keys[keyIndex] = temp
+		node.keys = append(node.keys, temp)
 		slices.Sort(node.keys)
 		return
 	}
 
 	if len(parent.children[leftSibIndex].keys) == MIN_KEYS {
-		tree.mergeNodes(parent, childIndex, leftSibIndex)
+		tree.mergeNodes(parent, childIndex, leftSibIndex, keyIndex)
 		return
 	}
 
 	if len(parent.children[rigthSibIndex].keys) == MIN_KEYS {
-		tree.mergeNodes(parent, childIndex, rigthSibIndex)
+		tree.mergeNodes(parent, childIndex, rigthSibIndex, keyIndex)
 		return
 	}
 	panic("node must have either left or rigth sibiling")
 }
 
-func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int) {
+func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int, keyIndex int) {
 	// TODO: Implement node merging logic
 
 	// rigth
+
 	sibling := parent.children[sibilingIndex]
 	node := parent.children[childIndex]
 	if tree.runner.debug {
@@ -275,12 +278,12 @@ func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int) 
 		if tree.runner.debug {
 			fmt.Println("rigth")
 		}
-		sibling.keys = append(sibling.keys, node.keys[0:MIN_KEYS-1]...)
+		sibling.keys = append(sibling.keys, node.keys...)
 		sibling.keys = append(sibling.keys, parent.keys[childIndex])
 		slices.Sort(sibling.keys)
 		if tree.runner.debug {
 			fmt.Printf("\n\nnew sib key %v\n\n", sibling.keys)
-			fmt.Printf("\n\n child index %d\n", childIndex)
+			fmt.Printf("\n\n child index %d key index %d\n", childIndex, keyIndex)
 			fmt.Printf("\n\nold parent keys %v\n\n", parent.keys)
 			fmt.Printf("\n\nold parent childern %v\n\n", parent.children)
 		}
@@ -290,6 +293,22 @@ func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int) 
 			fmt.Printf("\n\nnew parent keys %v\n\n", parent.keys)
 			fmt.Printf("\n\nnew parent childern %v\n\n", parent.children)
 		}
+		if len(parent.keys) < MIN_KEYS {
+			if len(parent.keys) == 0 {
+				fmt.Printf("\n\nmy intest %v\n\n", parent.children)
+				if tree.root == parent {
+					tree.root = sibling
+				}
+				sibling.children = append(sibling.children, slices.Delete(parent.children, sibilingIndex, sibilingIndex+1)...)
+				parent = sibling
+				return
+			}
+			newParent, newChildIndex, keyIndex := tree.search(parent.keys[childIndex-1])
+			if keyIndex == -1 {
+				panic("key in parent not found after delete")
+			}
+			tree.borrowFromSibling(newParent, newChildIndex, keyIndex)
+		}
 		return
 	}
 
@@ -297,12 +316,12 @@ func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int) 
 	if tree.runner.debug {
 		fmt.Println("left")
 	}
-	sibling.keys = append(sibling.keys, node.keys[0:MIN_KEYS-1]...)
+	sibling.keys = append(sibling.keys, node.keys...)
 	sibling.keys = append(sibling.keys, parent.keys[childIndex-1])
 	slices.Sort(sibling.keys)
 	if tree.runner.debug {
 		fmt.Printf("\n\nnew sib key %v\n\n", sibling.keys)
-		fmt.Printf("\n\n child index %d\n", childIndex)
+		fmt.Printf("\n\n child index %d key index %d\n", childIndex, keyIndex)
 		fmt.Printf("\n\nold parent keys %v\n\n", parent.keys)
 		fmt.Printf("\n\nold parent childern %v\n\n", parent.children)
 	}
@@ -311,6 +330,22 @@ func (tree *BTree) mergeNodes(parent *BNode, childIndex int, sibilingIndex int) 
 	if tree.runner.debug {
 		fmt.Printf("\n\nnew parent keys %v\n\n", parent.keys)
 		fmt.Printf("\n\nnew parent childern %v\n\n", parent.children)
+	}
+	if len(parent.keys) < MIN_KEYS {
+		if len(parent.keys) == 0 {
+			fmt.Printf("\n\nmy intest %v\n\n", parent.children)
+			if tree.root == parent {
+				tree.root = sibling
+			}
+			sibling.children = append(sibling.children, slices.Delete(parent.children, sibilingIndex, sibilingIndex+1)...)
+			parent = sibling
+			return
+		}
+		newParent, newChildIndex, keyIndex := tree.search(parent.keys[childIndex-2])
+		if keyIndex == -1 {
+			panic("key in parent not found after delete")
+		}
+		tree.borrowFromSibling(newParent, newChildIndex, keyIndex)
 	}
 }
 
@@ -377,12 +412,14 @@ func (r Runner) delete() {
 		{values: []int{10, 20, 30, 40, 50, 5, 15, 25, 35, 45, 55, 60, 70, 80, 90, 65}, key: 8},
 		{values: []int{10, 20, 30, 40, 50, 5, 15, 25, 35, 45, 55, 60, 70, 80, 90, 65, 95, 85, 75}, key: 1000},
 		{values: []int{1, 2, 3, 4, 5, 6, 7, 8}, key: 7},
+		{values: []int{1, 2, 3, 4, 5, 6, 7, 8}, key: 5},
+		{values: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}, key: 16},
 	*/
 	cases := []struct {
 		values []int
 		key    int
 	}{
-		{values: []int{1, 2, 3, 4, 5, 6, 7, 8}, key: 5},
+		{values: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}, key: 16},
 	}
 
 	for i, case_ := range cases {
